@@ -1,20 +1,39 @@
+#!/usr/bin/env python3
+"""
+Caipora: Guardiã da Amazônia
+Jogo educativo sobre proteção ambiental
+"""
+
 import pygame
 import sys
+import os
 
-pygame.init()
+# Adiciona o diretório src ao path
+sys.path.append(os.path.dirname(__file__))
 
-# Configurações da janela
-tela = pygame.display.set_mode((800, 600))
-pygame.display.set_caption('Meu Jogo com Pygame')
+from game import Game
 
-# Loop principal
-enquanto_rodando = True
-while enquanto_rodando:
-    for evento in pygame.event.get():
-        if evento.type == pygame.QUIT:
-            enquanto_rodando = False
-    tela.fill((0, 0, 0))
-    pygame.display.flip()
+def main():
+    """Função principal do jogo"""
+    try:
+        print("🌳 Iniciando Caipora: Guardiã da Amazônia...")
+        print("🎮 Use WASD ou setas para mover a Caipora")
+        print("🎯 Proteja os animais dos caçadores!")
+        print("-" * 50)
+        
+        game = Game()
+        game.run()
+        
+    except ImportError as e:
+        print("❌ Erro: Pygame não está instalado!")
+        print("📦 Execute: pip install pygame")
+        return 1
+    except Exception as e:
+        print(f"❌ Erro inesperado: {e}")
+        return 1
+    
+    return 0
 
-pygame.quit()
-sys.exit()
+if __name__ == "__main__":
+    exit_code = main()
+    sys.exit(exit_code)
