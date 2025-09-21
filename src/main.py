@@ -11,13 +11,13 @@ import os
 # Adiciona o diretório src ao path
 sys.path.append(os.path.dirname(__file__))
 
-from game import Game
+from game_compact import Game
 
 def main():
     """Função principal do jogo"""
     try:
         print("🌳 Iniciando Caipora: Guardiã da Amazônia...")
-        print("🎮 Use WASD ou setas para mover a Caipora")
+        print("🎮 Use as teclas W, A, S e D ou setas para mover a Caipora")
         print("🎯 Proteja os animais dos caçadores!")
         print("-" * 50)
         

@@ -20,7 +20,7 @@ class Game:
         
         # Estado do jogo
         self.running = True
-        self.game_state = "playing"  # "playing", "paused", "game_over"
+        self.game_state = "menu"  # "menu", "playing", "paused", "game_over"
         
         # Pontuação e estatísticas
         self.score = 0
@@ -54,43 +54,73 @@ class Game:
         self.hunter_spawn_timer = 0
         self.animal_spawn_timer = 0
         
+        # Efeitos visuais
+        self.effects = []  # Lista de efeitos visuais temporários
+        
         # Gerar entidades iniciais
         self.spawn_initial_entities()
     
+    def add_effect(self, x, y, effect_type):
+        """Adiciona efeito visual"""
+        timers = {'expulsion': 30, 'save': 60}
+        radii = {'expulsion': 10, 'save': 5}
+        self.effects.append({'type': effect_type, 'x': x, 'y': y, 'timer': timers[effect_type], 'radius': radii[effect_type]})
+    
+    def update_effects(self):
+        """Atualiza efeitos visuais"""
+        for effect in self.effects[:]:
+            effect['timer'] -= 1
+            if effect['timer'] <= 0:
+                self.effects.remove(effect)
+            else:
+                effect['radius'] += 2 if effect['type'] == 'expulsion' else 1
+    
+    def draw_effects(self):
+        """Desenha efeitos visuais"""
+        for effect in self.effects:
+            x, y = int(effect['x']), int(effect['y'])
+            
+            if effect['type'] == 'expulsion':
+                # Ondas de choque
+                alpha = int(255 * (effect['timer'] / 30))
+                for i in range(3):
+                    radius = effect['radius'] + (i * 10)
+                    intensity = max(0, alpha - (i * 50))
+                    if intensity > 0:
+                        pygame.draw.circle(self.screen, (255, 100, 100), (x, y), radius, 3)
+            
+            elif effect['type'] == 'save':
+                # Estrela dourada
+                if effect['timer'] > 0:
+                    r = effect['radius']
+                    star_points = [(x + r * 2 * pygame.math.Vector2(1, 0).rotate(i * 144 - 90).x,
+                                   y + r * 2 * pygame.math.Vector2(1, 0).rotate(i * 144 - 90).y) for i in range(5)]
+                    inner_points = [(x + r * pygame.math.Vector2(1, 0).rotate(i * 144 + 72 - 90).x,
+                                    y + r * pygame.math.Vector2(1, 0).rotate(i * 144 + 72 - 90).y) for i in range(5)]
+                    
+                    points = []
+                    for i in range(5):
+                        points.extend([star_points[i], inner_points[i]])
+                    
+                    if len(points) >= 6:
+                        pygame.draw.polygon(self.screen, (255, 215, 0), points)
+    
     def spawn_initial_entities(self):
         """Cria caçadores e animais iniciais"""
-        # Spawn animais
-        animal_types = ["onça", "arara", "tamanduá", "boto", "macaco"]
         for i in range(8):
-            x = random.randint(50, self.width - 50)
-            y = random.randint(50, self.height - 50)
-            # Evita spawn muito próximo da Caipora
+            x, y = random.randint(50, self.width - 50), random.randint(50, self.height - 50)
             while abs(x - self.caipora.x) < 100 and abs(y - self.caipora.y) < 100:
-                x = random.randint(50, self.width - 50)
-                y = random.randint(50, self.height - 50)
-            animal_type = random.choice(animal_types)
-            self.animals.append(Animal(x, y, animal_type))
+                x, y = random.randint(50, self.width - 50), random.randint(50, self.height - 50)
+            self.animals.append(Animal(x, y, random.choice(["onça", "arara", "tamanduá", "boto", "macaco"])))
         
-        # Spawn hunters iniciais
-        for i in range(2):
+        for _ in range(2):
             self.spawn_hunter()
     
     def spawn_hunter(self):
         """Spawna um novo caçador na borda da tela"""
-        side = random.randint(1, 4)
-        if side == 1:  # Topo
-            x = random.randint(0, self.width)
-            y = -50
-        elif side == 2:  # Direita
-            x = self.width + 50
-            y = random.randint(0, self.height)
-        elif side == 3:  # Baixo
-            x = random.randint(0, self.width)
-            y = self.height + 50
-        else:  # Esquerda
-            x = -50
-            y = random.randint(0, self.height)
-        
+        positions = [(random.randint(0, self.width), -50), (self.width + 50, random.randint(0, self.height)), 
+                    (random.randint(0, self.width), self.height + 50), (-50, random.randint(0, self.height))]
+        x, y = random.choice(positions)
         self.hunters.append(Hunter(x, y))
     
     def handle_events(self):
@@ -100,7 +130,12 @@ class Game:
                 self.running = False
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
-                    self.running = False
+                    if self.game_state == "playing":
+                        self.game_state = "menu"
+                    else:
+                        self.running = False
+                elif event.key == pygame.K_SPACE and self.game_state == "menu":
+                    self.game_state = "playing"
                 elif event.key == pygame.K_r and self.game_state == "game_over":
                     self.restart_game()
     
@@ -138,10 +173,9 @@ class Game:
             hunter.update(self.animals)
             
             # Verifica colisão com Caipora
-            if self.caipora.rect.colliderect(hunter.rect):
-                self.hunters.remove(hunter)
-                self.hunters_caught += 1
-                self.score += 100
+            if self.caipora.rect.colliderect(hunter.rect) and not hunter.is_fleeing:
+                hunter.start_fleeing()
+                self.add_effect(hunter.rect.centerx, hunter.rect.centery, 'expulsion')
             
             # Verifica se caçador capturou animal
             for animal in self.animals[:]:
@@ -162,9 +196,19 @@ class Game:
                 animal.is_saved = True
                 self.animals_saved += 1
                 self.score += 50
+                self.add_effect(animal.rect.centerx, animal.rect.centery, 'save')
         
-        # Remove animais capturados após um tempo
+        # Remove animais capturados após um tempo e caçadores que fugiram
         self.animals = [a for a in self.animals if not a.should_remove()]
+        
+        # Remove caçadores que fugiram da tela
+        for hunter in self.hunters[:]:
+            if (hunter.x < -100 or hunter.x > self.width + 100 or 
+                hunter.y < -100 or hunter.y > self.height + 100):
+                if hunter.is_fleeing:
+                    self.hunters.remove(hunter)
+                    self.hunters_caught += 1
+                    self.score += 100
         
         # Spawn novos caçadores
         self.hunter_spawn_timer += 1
@@ -181,15 +225,15 @@ class Game:
             animal_type = random.choice(animal_types)
             self.animals.append(Animal(x, y, animal_type))
             self.animal_spawn_timer = 0
+        
+        # Atualiza efeitos visuais
+        self.update_effects()
     
     def draw_background(self):
         """Desenha o fundo da floresta"""
         self.screen.fill(self.colors['forest_green'])
-        
-        # Desenha algumas "árvores" simples
         for i in range(15):
-            x = (i * 80) % self.width
-            y = (i * 60) % self.height
+            x, y = (i * 80) % self.width, (i * 60) % self.height
             pygame.draw.circle(self.screen, self.colors['dark_green'], (x, y), 25)
             pygame.draw.rect(self.screen, self.colors['brown'], (x-5, y+15, 10, 20))
     
@@ -227,41 +271,126 @@ class Game:
         overlay.fill((0, 0, 0))
         self.screen.blit(overlay, (0, 0))
         
-        game_over_text = self.font.render("GAME OVER", True, self.colors['red'])
-        score_text = self.font.render(f"Pontuação Final: {self.score}", True, self.colors['white'])
-        restart_text = self.small_font.render("Pressione R para reiniciar", True, self.colors['white'])
+        texts = [
+            (self.font.render("GAME OVER", True, self.colors['red']), self.height//2 - 50),
+            (self.font.render(f"Pontuação Final: {self.score}", True, self.colors['white']), self.height//2),
+            (self.small_font.render("Pressione R para reiniciar", True, self.colors['white']), self.height//2 + 50)
+        ]
         
-        # Centraliza textos
-        game_over_rect = game_over_text.get_rect(center=(self.width//2, self.height//2 - 50))
-        score_rect = score_text.get_rect(center=(self.width//2, self.height//2))
-        restart_rect = restart_text.get_rect(center=(self.width//2, self.height//2 + 50))
-        
-        self.screen.blit(game_over_text, game_over_rect)
-        self.screen.blit(score_text, score_rect)
-        self.screen.blit(restart_text, restart_rect)
+        for text, y in texts:
+            self.screen.blit(text, text.get_rect(center=(self.width//2, y)))
     
     def restart_game(self):
         """Reinicia o jogo"""
-        self.__init__()
+        self.game_state = "playing"
+        self.score = self.animals_saved = self.hunters_caught = self.animals_lost = 0
+        self.caipora = Caipora(self.width // 2, self.height // 2)
+        self.hunters = self.animals = self.effects = []
+        self.hunter_spawn_timer = self.animal_spawn_timer = 0
+        self.spawn_initial_entities()
+    
+    def draw_menu(self):
+        """Desenha tela de menu inicial"""
+        self.screen.fill((0, 50, 0))
+        
+        # Título
+        title = pygame.font.Font(None, 72).render("CAIPORA", True, (255, 255, 0))
+        subtitle = self.font.render("Guardiã da Amazônia", True, (0, 255, 0))
+        self.screen.blit(title, title.get_rect(center=(self.width//2, 100)))
+        self.screen.blit(subtitle, subtitle.get_rect(center=(self.width//2, 150)))
+        
+        # Instruções compactas
+        instructions = [
+            ("🎯 OBJETIVO:", (255, 255, 0)),
+            ("• Expulse caçadores tocando neles", (255, 255, 255)),
+            ("• Proteja animais ficando próximos", (255, 255, 255)),
+            ("🎮 CONTROLES:", (255, 255, 0)),
+            ("• WASD/Setas: Mover CAIPORA", (255, 255, 255)),
+            ("• Game Over: 5 animais capturados", (255, 100, 100))
+        ]
+        
+        y = 220
+        for text, color in instructions:
+            rendered = self.small_font.render(text, True, color)
+            self.screen.blit(rendered, (50, y))
+            y += 25
+        
+        # Exemplos visuais
+        examples = [
+            (Caipora(150, y + 20), "← CAIPORA (Você)"),
+            (Hunter(150, y + 80), "← CAÇADOR (Inimigo)"),
+            (Animal(150, y + 140, "onça"), "← ANIMAIS (Proteger)")
+        ]
+        
+        for i, (entity, desc) in enumerate(examples):
+            entity.draw(self.screen)
+            text = self.small_font.render(desc, True, (255, 255, 255))
+            self.screen.blit(text, (200, y + 30 + i * 60))
+        
+        # Botão de início
+        if pygame.time.get_ticks() % 1000 < 500:
+            start = self.font.render("Pressione ESPAÇO para começar!", True, (255, 255, 0))
+            self.screen.blit(start, start.get_rect(center=(self.width//2, self.height - 50)))
+    
+    def draw_game_ui(self):
+        """Desenha interface do jogo melhorada"""
+        # Painel principal
+        panel = pygame.Surface((300, 120))
+        panel.set_alpha(180)
+        panel.fill((0, 0, 0))
+        self.screen.blit(panel, (10, 10))
+        
+        # Info compacta
+        info = [
+            (f"🏆 Pontos: {self.score}", (255, 255, 0)),
+            (f"💚 Salvos: {self.animals_saved}", (0, 255, 0)),
+            (f"🎯 Expulsos: {self.hunters_caught}", (255, 100, 100)),
+            (f"💔 Perdidos: {self.animals_lost}/{self.max_animals_lost}", 
+             (255, 0, 0) if self.animals_lost >= self.max_animals_lost - 1 else (255, 255, 255))
+        ]
+        
+        for i, (text, color) in enumerate(info):
+            self.screen.blit(self.small_font.render(text, True, color), (20, 20 + i * 22))
+        
+        # Controles
+        controls_panel = pygame.Surface((200, 50))
+        controls_panel.set_alpha(150)
+        controls_panel.fill((0, 0, 0))
+        self.screen.blit(controls_panel, (10, self.height - 60))
+        
+        self.screen.blit(self.small_font.render("WASD: Mover | ESC: Menu", True, (255, 255, 255)), (20, self.height - 50))
+        
+        # Dica
+        if self.hunters:
+            tip = self.small_font.render("💡 Toque nos caçadores!", True, (255, 255, 0))
+            tip_rect = tip.get_rect(center=(self.width//2, 30))
+            pygame.draw.rect(self.screen, (0, 0, 0), tip_rect.inflate(20, 10))
+            pygame.draw.rect(self.screen, (255, 255, 0), tip_rect.inflate(20, 10), 2)
+            self.screen.blit(tip, tip_rect)
     
     def draw(self):
         """Desenha tudo na tela"""
-        self.draw_background()
-        
-        # Desenha entidades
-        self.caipora.draw(self.screen)
-        
-        for hunter in self.hunters:
-            hunter.draw(self.screen)
-        
-        for animal in self.animals:
-            animal.draw(self.screen)
-        
-        # UI
-        self.draw_ui()
-        
-        # Game over overlay
-        if self.game_state == "game_over":
+        if self.game_state == "menu":
+            self.draw_menu()
+        elif self.game_state == "playing":
+            self.draw_background()
+            
+            # Desenha entidades
+            self.caipora.draw(self.screen)
+            
+            for hunter in self.hunters:
+                hunter.draw(self.screen)
+            
+            for animal in self.animals:
+                animal.draw(self.screen)
+            
+            # Efeitos visuais
+            self.draw_effects()
+            
+            # UI do jogo
+            self.draw_game_ui()
+        elif self.game_state == "game_over":
+            self.draw_background()
             self.draw_game_over()
         
         pygame.display.flip()
@@ -284,10 +413,11 @@ class Caipora:
     def __init__(self, x, y):
         self.x = x
         self.y = y
-        self.width = 40
-        self.height = 40
+        self.width = 45
+        self.height = 45
         self.speed = 5
         self.rect = pygame.Rect(self.x, self.y, self.width, self.height)
+        self.protection_radius = 80
     
     def move(self, dx, dy):
         """Move a Caipora"""
@@ -301,75 +431,123 @@ class Caipora:
     
     def draw(self, screen):
         """Desenha a Caipora na tela"""
-        # Corpo da Caipora (verde escuro)
-        pygame.draw.ellipse(screen, (0, 100, 0), self.rect)
-        # Marca distintiva (círculo amarelo no centro)
-        center_x = self.rect.centerx
-        center_y = self.rect.centery
-        pygame.draw.circle(screen, (255, 255, 0), (center_x, center_y), 8)
+        cx, cy = self.rect.center
+        
+        # Aura de proteção
+        pygame.draw.circle(screen, (0, 255, 0), (cx, cy), self.protection_radius, 2)
+        
+        # Corpo humanoide
+        pygame.draw.circle(screen, (101, 67, 33), (cx, cy - 15), 12)  # Cabeça
+        pygame.draw.circle(screen, (34, 139, 34), (cx, cy - 15), 15, 3)  # Cabelo
+        pygame.draw.ellipse(screen, (0, 100, 0), (cx - 10, cy - 5, 20, 25))  # Corpo
+        pygame.draw.circle(screen, (101, 67, 33), (cx - 15, cy), 5)  # Braços
+        pygame.draw.circle(screen, (101, 67, 33), (cx + 15, cy), 5)
+        pygame.draw.circle(screen, (139, 69, 19), (cx - 8, cy + 20), 6)  # Pernas
+        pygame.draw.circle(screen, (139, 69, 19), (cx + 8, cy + 20), 6)
+        
+        # Estrela mágica
+        star_points = [(cx + 8 * pygame.math.Vector2(1, 0).rotate(i * 144 - 90).x, 
+                       cy + 8 * pygame.math.Vector2(1, 0).rotate(i * 144 - 90).y) for i in range(5)]
+        pygame.draw.polygon(screen, (255, 255, 0), star_points)
+        
+        # Texto identificador
+        text = pygame.font.Font(None, 20).render("CAIPORA", True, (255, 255, 255))
+        text_rect = text.get_rect(center=(cx, cy - 35))
+        pygame.draw.rect(screen, (0, 0, 0), text_rect.inflate(4, 2))
+        screen.blit(text, text_rect)
 
 
 class Hunter:
     """Classe que representa os caçadores ilegais"""
     
     def __init__(self, x, y):
-        self.x = x
-        self.y = y
-        self.width = 30
-        self.height = 30
+        self.x, self.y = x, y
+        self.width = self.height = 35
         self.speed = random.uniform(1.5, 2.5)
-        self.rect = pygame.Rect(self.x, self.y, self.width, self.height)
-        
+        self.rect = pygame.Rect(x, y, 35, 35)
         self.target_animal = None
-        self.direction_x = 0
-        self.direction_y = 0
+        self.direction_x = self.direction_y = 0
+        self.is_fleeing = False
+        self.flee_timer = 0
     
     def find_nearest_animal(self, animals):
         """Encontra o animal mais próximo"""
-        nearest_animal = None
-        min_distance = float('inf')
-        
-        for animal in animals:
-            if not animal.is_caught and not animal.is_saved:
-                distance = ((self.x - animal.x) ** 2 + (self.y - animal.y) ** 2) ** 0.5
-                if distance < min_distance:
-                    min_distance = distance
-                    nearest_animal = animal
-        
-        return nearest_animal
+        valid_animals = [a for a in animals if not a.is_caught and not a.is_saved]
+        if not valid_animals:
+            return None
+        return min(valid_animals, key=lambda a: ((self.x - a.x) ** 2 + (self.y - a.y) ** 2) ** 0.5)
     
     def update(self, animals):
         """Atualiza o caçador"""
-        # Encontra animal alvo
-        if not self.target_animal or self.target_animal.is_caught or self.target_animal.is_saved:
-            self.target_animal = self.find_nearest_animal(animals)
-        
-        # Move em direção ao animal alvo
-        if self.target_animal:
-            dx = self.target_animal.x - self.x
-            dy = self.target_animal.y - self.y
-            distance = (dx ** 2 + dy ** 2) ** 0.5
+        if self.is_fleeing:
+            self.flee_timer -= 1
+            if self.flee_timer <= 0:
+                self.is_fleeing = False
+            # Move para fora da tela
+            self.x += self.direction_x * (self.speed * 2)
+            self.y += self.direction_y * (self.speed * 2)
+        else:
+            # Encontra animal alvo
+            if not self.target_animal or self.target_animal.is_caught or self.target_animal.is_saved:
+                self.target_animal = self.find_nearest_animal(animals)
             
-            if distance > 0:
-                self.direction_x = dx / distance
-                self.direction_y = dy / distance
+            # Move em direção ao animal alvo
+            if self.target_animal:
+                dx = self.target_animal.x - self.x
+                dy = self.target_animal.y - self.y
+                distance = (dx ** 2 + dy ** 2) ** 0.5
+                
+                if distance > 0:
+                    self.direction_x = dx / distance
+                    self.direction_y = dy / distance
+            
+            # Move
+            self.x += self.direction_x * self.speed
+            self.y += self.direction_y * self.speed
         
-        # Move
-        self.x += self.direction_x * self.speed
-        self.y += self.direction_y * self.speed
         self.rect.x = self.x
         self.rect.y = self.y
     
+    def start_fleeing(self):
+        """Caçador começa a fugir"""
+        self.is_fleeing = True
+        self.flee_timer = 120
+        angle = random.uniform(0, 360)
+        vec = pygame.math.Vector2(1, 0).rotate(angle)
+        self.direction_x, self.direction_y = vec.x, vec.y
+    
     def draw(self, screen):
         """Desenha o caçador na tela"""
-        # Caçador (retângulo vermelho)
-        pygame.draw.rect(screen, (200, 0, 0), self.rect)
-        # Arma (linha preta)
-        center_x = self.rect.centerx
-        center_y = self.rect.centery
-        end_x = center_x + self.direction_x * 20
-        end_y = center_y + self.direction_y * 20
-        pygame.draw.line(screen, (0, 0, 0), (center_x, center_y), (end_x, end_y), 3)
+        cx, cy = self.rect.center
+        color = (100, 0, 0) if self.is_fleeing else (200, 0, 0)
+        
+        # Corpo humanoide
+        pygame.draw.circle(screen, (255, 220, 177), (cx, cy - 12), 8)  # Cabeça
+        pygame.draw.ellipse(screen, (139, 69, 19), (cx - 10, cy - 20, 20, 8))  # Chapéu
+        pygame.draw.ellipse(screen, (101, 67, 33), (cx - 8, cy - 25, 16, 10))
+        pygame.draw.rect(screen, color, (cx - 8, cy - 5, 16, 20))  # Corpo
+        pygame.draw.circle(screen, (255, 220, 177), (cx - 12, cy), 4)  # Braços
+        pygame.draw.circle(screen, (255, 220, 177), (cx + 12, cy), 4)
+        pygame.draw.rect(screen, (0, 0, 139), (cx - 6, cy + 15, 5, 12))  # Pernas
+        pygame.draw.rect(screen, (0, 0, 139), (cx + 1, cy + 15, 5, 12))
+        
+        if self.is_fleeing:
+            # Linhas de movimento
+            for i in range(3):
+                lx = cx - (self.direction_x * (10 + i * 5))
+                ly = cy - (self.direction_y * (10 + i * 5))
+                pygame.draw.line(screen, (255, 255, 0), (lx, ly - 2), (lx, ly + 2), 2)
+        else:
+            # Rifle
+            gx = cx + self.direction_x * 25
+            gy = cy + self.direction_y * 25
+            pygame.draw.line(screen, (64, 64, 64), (cx, cy), (gx, gy), 4)
+            pygame.draw.circle(screen, (32, 32, 32), (gx, gy), 3)
+            # Texto
+            text = pygame.font.Font(None, 16).render("CAÇADOR", True, (255, 255, 255))
+            text_rect = text.get_rect(center=(cx, cy - 32))
+            pygame.draw.rect(screen, (0, 0, 0), text_rect.inflate(2, 1))
+            screen.blit(text, text_rect)
 
 
 class Animal:
@@ -459,24 +637,47 @@ class Animal:
     
     def draw(self, screen):
         """Desenha o animal na tela"""
+        cx, cy = self.rect.center
         color = self.colors.get(self.animal_type, self.colors["genérico"])
         
         if self.is_caught:
-            # Animal capturado fica vermelho e diminui
-            color = (100, 0, 0)
             size = max(5, self.width - self.removal_timer // 10)
-            rect = pygame.Rect(self.x, self.y, size, size)
-        elif self.is_saved:
-            # Animal salvo tem borda verde
-            rect = self.rect
-            pygame.draw.ellipse(screen, (0, 255, 0), rect, 3)
-        else:
-            rect = self.rect
+            pygame.draw.ellipse(screen, (100, 0, 0), (self.x, self.y, size, size))
+            return
         
-        # Desenha o animal
-        pygame.draw.ellipse(screen, color, rect)
+        # Desenha forma base
+        pygame.draw.ellipse(screen, color, self.rect)
         
-        # Indicador de medo
+        # Detalhes específicos
+        if self.animal_type == "onça":
+            [pygame.draw.circle(screen, (0, 0, 0), (cx + random.randint(-8, 8), cy + random.randint(-8, 8)), 2) for _ in range(4)]
+        elif self.animal_type == "arara":
+            pygame.draw.polygon(screen, (255, 200, 0), [(cx + 10, cy - 5), (cx + 15, cy), (cx + 10, cy + 5)])
+        elif self.animal_type == "tamanduá":
+            pygame.draw.ellipse(screen, (100, 50, 0), (cx + 8, cy - 3, 12, 6))
+        elif self.animal_type == "boto":
+            pygame.draw.ellipse(screen, (255, 150, 200), (cx + 8, cy - 2, 8, 4))
+        elif self.animal_type == "macaco":
+            pygame.draw.circle(screen, color, (cx - 12, cy + 8), 4)
+        
+        # Estados visuais
+        if self.is_saved:
+            pygame.draw.ellipse(screen, (0, 255, 0), self.rect, 3)
+            hx, hy = cx - 15, cy - 10
+            pygame.draw.circle(screen, (255, 0, 100), (hx, hy), 3)
+            pygame.draw.circle(screen, (255, 0, 100), (hx + 4, hy), 3)
+            pygame.draw.polygon(screen, (255, 0, 100), [(hx - 2, hy + 2), (hx + 6, hy + 2), (hx + 2, hy + 6)])
+        
         if self.fear_level > 20 and not self.is_caught and not self.is_saved:
             fear_width = int(20 * (self.fear_level / 100))
             pygame.draw.rect(screen, (255, 0, 0), (self.x, self.y - 8, fear_width, 3))
+            if self.fear_level > 70:
+                pygame.draw.circle(screen, (255, 255, 0), (cx, cy - 15), 6)
+                pygame.draw.rect(screen, (255, 0, 0), (cx - 1, cy - 18, 2, 8))
+                pygame.draw.circle(screen, (255, 0, 0), (cx, cy - 8), 1)
+        
+        # Nome
+        text = pygame.font.Font(None, 16).render(self.animal_type.upper(), True, (255, 255, 255))
+        text_rect = text.get_rect(center=(cx, cy + 20))
+        pygame.draw.rect(screen, (0, 0, 0), text_rect.inflate(2, 1))
+        screen.blit(text, text_rect)
