@@ -10,10 +10,16 @@ def main():
     try:
         from game_compact import Game
         
-        print("🌳 Iniciando Caipora: Guardiã da Amazônia...")
-        print("🎮 Use as teclas W, A, S e D ou setas para mover a Caipora")
-        print("🎯 Proteja os animais dos caçadores!")
-        print("-" * 50)
+        print("═" * 55)
+        print("🌳 CAIPORA: GUARDIÃ DA AMAZÔNIA 🐆")
+        print("═" * 55)
+        print("🎮 Controles: W, A, S, D ou setas para mover")
+        print("🎯 Objetivo: Proteja os animais dos caçadores!")
+        print("🌱 Missão: Preservar a biodiversidade amazônica")
+        print("═" * 55)
+        print("✨ Pressione qualquer tecla para começar...")
+        input()
+        print("🎮 Iniciando jogo...")
         
         # Inicializa e executa o jogo
         game = Game()
