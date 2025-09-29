@@ -1,14 +1,10 @@
-Projeto de Jogo em Python com Pygame
+Caiopra: Guardiã da Floresta
 
 Este projeto é um template para o desenvolvimento de um jogo utilizando Python e a biblioteca Pygame, com foco em testes de software e aplicação de boas práticas de desenvolvimento.
 
 📁 Estrutura do Projeto
 
 src/: Código-fonte do jogo
-
-assets/: Imagens, sons e outros recursos utilizados no jogo
-
-tests/: Testes automatizados
 
 docs/: Documentação complementar
 
